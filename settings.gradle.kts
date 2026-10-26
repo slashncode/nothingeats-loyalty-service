@@ -59,6 +59,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "nothingeats-example-service"
+rootProject.name = "nothingeats-loyalty-service"
 
-include("domain", "application", "adapters", "app")
+include("grpc-api", "domain", "application", "adapters", "app")

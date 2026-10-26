@@ -1,0 +1,142 @@
+[
+  {
+    "key": "first-nothing",
+    "tier": "BRONZE",
+    "name": { "de": "Erstes Nichts", "en": "First nothing" },
+    "description": { "de": "Deine erste Bestellung ist (nicht) angekommen.", "en": "Your first order (didn't) arrive." },
+    "rule": { "type": "orders", "min": 1 }
+  },
+  {
+    "key": "regular",
+    "tier": "SILVER",
+    "name": { "de": "Stammgast", "en": "Regular" },
+    "description": { "de": "Zehn Bestellungen, null Bissen.", "en": "Ten orders, zero bites." },
+    "rule": { "type": "orders", "min": 10 }
+  },
+  {
+    "key": "nothing-addict",
+    "tier": "GOLD",
+    "name": { "de": "Nichts-Süchtig", "en": "Nothing addict" },
+    "description": { "de": "25 Bestellungen. Wir machen uns ein bisschen Sorgen.", "en": "25 orders. We're a little worried." },
+    "rule": { "type": "orders", "min": 25 }
+  },
+  {
+    "key": "explorer",
+    "tier": "BRONZE",
+    "name": { "de": "Entdecker", "en": "Explorer" },
+    "description": { "de": "Bei drei verschiedenen Restaurants nichts gegessen.", "en": "Ate nothing at three different restaurants." },
+    "rule": { "type": "restaurants", "min": 3 }
+  },
+  {
+    "key": "globetrotter",
+    "tier": "GOLD",
+    "name": { "de": "Weltenbummler", "en": "Globetrotter" },
+    "description": { "de": "Jedes Restaurant der Stadt hat dir schon nichts geliefert.", "en": "Every restaurant in town has delivered you nothing." },
+    "rule": { "type": "restaurants", "min": 8 }
+  },
+  {
+    "key": "streak-3",
+    "tier": "BRONZE",
+    "name": { "de": "Drei Tage Nichts", "en": "Three days of nothing" },
+    "description": { "de": "Drei Tage in Folge bestellt.", "en": "Ordered three days in a row." },
+    "rule": { "type": "streak", "min": 3 }
+  },
+  {
+    "key": "streak-7",
+    "tier": "GOLD",
+    "name": { "de": "Eine Woche Nichts", "en": "A week of nothing" },
+    "description": { "de": "Sieben Tage in Folge. Disziplin!", "en": "Seven days in a row. Discipline!" },
+    "rule": { "type": "streak", "min": 7 }
+  },
+  {
+    "key": "night-owl",
+    "tier": "SILVER",
+    "name": { "de": "Nachteule", "en": "Night owl" },
+    "description": { "de": "Zwischen 22 und 5 Uhr nichts bestellt.", "en": "Ordered nothing between 10 pm and 5 am." },
+    "rule": { "type": "placedBetween", "fromHour": 22, "toHour": 5 }
+  },
+  {
+    "key": "lunch-break",
+    "tier": "BRONZE",
+    "name": { "de": "Mittagspause", "en": "Lunch break" },
+    "description": { "de": "Zwischen 12 und 14 Uhr nichts gegessen.", "en": "Ate nothing between noon and 2 pm." },
+    "rule": { "type": "placedBetween", "fromHour": 12, "toHour": 14 }
+  },
+  {
+    "key": "big-nothing",
+    "tier": "SILVER",
+    "name": { "de": "Großes Nichts", "en": "Big nothing" },
+    "description": { "de": "Eine Bestellung über 50 €, komplett nicht gegessen.", "en": "One order over €50, not eaten at all." },
+    "rule": { "type": "orderTotal", "minCents": 5000 }
+  },
+  {
+    "key": "party",
+    "tier": "SILVER",
+    "name": { "de": "Party ohne Essen", "en": "Party without food" },
+    "description": { "de": "Zehn Gerichte in einer Bestellung.", "en": "Ten dishes in one order." },
+    "rule": { "type": "orderItems", "min": 10 }
+  },
+  {
+    "key": "saver-100",
+    "tier": "BRONZE",
+    "name": { "de": "Sparfuchs", "en": "Penny pincher" },
+    "description": { "de": "100 € nicht ausgegeben.", "en": "€100 not spent." },
+    "rule": { "type": "moneyNotSpent", "minCents": 10000 }
+  },
+  {
+    "key": "saver-1000",
+    "tier": "GOLD",
+    "name": { "de": "Sparkassen-Liebling", "en": "Bank's favourite" },
+    "description": { "de": "1.000 € nicht ausgegeben.", "en": "€1,000 not spent." },
+    "rule": { "type": "moneyNotSpent", "minCents": 100000 }
+  },
+  {
+    "key": "calorie-killer",
+    "tier": "SILVER",
+    "name": { "de": "Kalorienkiller", "en": "Calorie killer" },
+    "description": { "de": "10.000 kcal nicht gegessen.", "en": "10,000 kcal not eaten." },
+    "rule": { "type": "caloriesAvoided", "min": 10000 }
+  },
+  {
+    "key": "stamp-collector",
+    "tier": "SILVER",
+    "name": { "de": "Stempelsammler", "en": "Stamp collector" },
+    "description": { "de": "Eine Stempelkarte vollgemacht.", "en": "Filled a stamp card." },
+    "rule": { "type": "stampCards", "min": 1 }
+  },
+  {
+    "key": "deal-hunter",
+    "tier": "BRONZE",
+    "name": { "de": "Schnäppchenjäger", "en": "Deal hunter" },
+    "description": { "de": "Einen Blitzdeal nicht gegessen.", "en": "Didn't eat a flash deal." },
+    "rule": { "type": "dealOrders", "min": 1 }
+  },
+  {
+    "key": "coupon-clipper",
+    "tier": "BRONZE",
+    "name": { "de": "Gutscheinprofi", "en": "Coupon clipper" },
+    "description": { "de": "Mit Gutschein noch weniger nicht ausgegeben.", "en": "Used a coupon to not spend even less." },
+    "rule": { "type": "couponOrders", "min": 1 }
+  },
+  {
+    "key": "level-5",
+    "tier": "SILVER",
+    "name": { "de": "Level 5", "en": "Level 5" },
+    "description": { "de": "Level 5 erreicht.", "en": "Reached level 5." },
+    "rule": { "type": "level", "min": 5 }
+  },
+  {
+    "key": "level-10",
+    "tier": "GOLD",
+    "name": { "de": "Level 10", "en": "Level 10" },
+    "description": { "de": "Level 10 erreicht. Respekt.", "en": "Reached level 10. Respect." },
+    "rule": { "type": "level", "min": 10 }
+  },
+  {
+    "key": "golden-fork",
+    "tier": "GOLD",
+    "name": { "de": "Goldene Gabel", "en": "Golden fork" },
+    "description": { "de": "Der seltenste Gewinn am Glücksrad.", "en": "The rarest prize on the wheel." },
+    "rule": { "type": "wheelPrize" }
+  }
+]

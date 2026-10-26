@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package nothingeats.loyalty.v1;
+
+option java_multiple_files = true;
+option java_package = "io.github.slashncode.nothingeats.loyalty.grpc.v1";
+
+// The signed-in customer's coupons, for ordering's cart and checkout. Callers forward the
+// customer's access token in `authorization`; a coupon of someone else does not exist for them.
+// Errors carry google.rpc.ErrorInfo with a stable reason in the domain "nothingeats":
+// COUPON_NOT_FOUND (NOT_FOUND), COUPON_USED, COUPON_EXPIRED, COUPON_IN_USE (FAILED_PRECONDITION),
+// COUPON_OTHER_RESTAURANT, COUPON_MINIMUM_NOT_REACHED (INVALID_ARGUMENT).
+service LoyaltyService {
+  // What the coupon takes off this cart. No side effects.
+  rpc PriceCoupon(PriceCouponRequest) returns (PriceCouponResponse);
+
+  // Reserves the coupon for one checkout and returns the discount. Idempotent per reservation id
+  // (ordering uses the checkout's idempotency key). The `order placed` event redeems it for good;
+  // a reservation nobody confirms lapses after a few minutes.
+  rpc RedeemCoupon(RedeemCouponRequest) returns (RedeemCouponResponse);
+}
+
+message CouponCart {
+  // The catalog's restaurant id.
+  string restaurant_id = 1;
+  int64 subtotal_cents = 2;
+  int64 delivery_fee_cents = 3;
+  // One entry per cart line (not per item): a free dish is the dearest one.
+  repeated int64 unit_prices_cents = 4;
+}
+
+message Coupon {
+  string code = 1;
+  // PERCENT, AMOUNT, FREE_DELIVERY or FREE_DISH.
+  string kind = 2;
+  // Percent for PERCENT, cents for AMOUNT, 0 otherwise.
+  int64 value = 3;
+  // The most the coupon takes off (0 = no limit).
+  int64 max_discount_cents = 4;
+}
+
+message PriceCouponRequest {
+  string code = 1;
+  CouponCart cart = 2;
+}
+
+message PriceCouponResponse {
+  int64 discount_cents = 1;
+  Coupon coupon = 2;
+}
+
+message RedeemCouponRequest {
+  string code = 1;
+  string reservation_id = 2;
+  CouponCart cart = 3;
+}
+
+message RedeemCouponResponse {
+  int64 discount_cents = 1;
+  Coupon coupon = 2;
+}

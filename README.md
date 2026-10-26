@@ -1,52 +1,45 @@
-# nothingeats-kotlin-service-template
+# nothingeats-loyalty-service
 
-Template for a NothingEats bounded-context service: Kotlin, Ktor, hexagonal Gradle modules, kotlin-inject, Postgres. It builds, tests and runs out of the box with a small `Item` example that shows every pattern.
+Loyalty bounded context of [NothingEats](https://github.com/slashncode/nothingeats): XP and levels, daily streaks, badges, a stamp card per restaurant, the wheel, and coupons. Everything is earned by orders of nothing that arrived.
 
-Part of [NothingEats](https://github.com/slashncode/nothingeats).
+## How rewards work
 
-## Create a service
+| What | Rule |
+|---|---|
+| XP per delivered order | 25, plus 1 per euro not spent (up to 50), plus 5 per streak day beyond the first (up to 30), plus 15 for a restaurant's first order |
+| Levels | level 2 at 100 XP, every next level needs 50 XP more than the one before (100, 150, 200, …) |
+| Streak | days in a row with an order, counted in Hamburg time; broken after a whole day without one |
+| Stamp card | one per restaurant; five deliveries fill it and bring a coupon for one free dish there (up to 15 €) |
+| Wheel | one spin per level reached, decided on the server: 10 % or 20 % off, 5 € off, free delivery, a free dish (up to 12 €), 100 bonus XP or the rare golden fork badge |
+| Badges | data, not code: [`badges.json`](adapters/src/main/resources/badges.json) (20 badges, rules like `orders`, `streak`, `placedBetween`, `orderTotal`) |
+| Coupons | valid 30 days, priced and reserved by ordering over gRPC, redeemed by the `order placed` event |
 
-1. **Use this template** on GitHub → `nothingeats-<context>-service`, clone it next to the other repos.
-2. `scripts/init-service.sh <context>` renames packages, project and image. CI pushes a signed image on main automatically in every repo created from the template.
-3. Replace the `Item` example with the real domain.
+The wheel's odds come from the PostHog flag `spin-wheel-odds` (payload `{"weights": {"PERCENT_10": 25, …}}`, per variant for an experiment) for customers with analytics consent; everyone else, and every broken payload, gets the defaults.
 
-## Modules
+## API
 
-| Module | Contains | May depend on |
+REST (`/api/loyalty/v1`, signed-in customer, texts in `?lang=de|en` or Accept-Language):
+
+| Method | Path | What |
 |---|---|---|
-| `domain` | Aggregates, value objects, domain exceptions | nothing (pure Kotlin) |
-| `application` | Use cases, ports (`ItemRepository`), test fixtures (in-memory port implementations) | `domain`, `platform-core` |
-| `adapters` | Ktor routes, Exposed repositories, Flyway migrations (`db/migration`) | `application`, `platform-http`, `platform-persistence` |
-| `app` | kotlin-inject composition root, typed config, `main`, logging config | everything |
+| `GET` | `/me` | Level and XP, spins, streak, totals, every badge (earned first), stamp cards, usable coupons |
+| `GET` | `/coupons` | Usable coupons, soonest expiry first |
+| `POST` | `/spins` | One turn of the wheel; 409 `NO_SPINS_LEFT` |
+| `GET` | `/me/export` | GDPR export |
 
-The module graph enforces the dependency direction at compile time; Konsist tests in `app` cover the rest (domain imports, HTTP adapters never touching persistence).
+gRPC (`nothingeats.loyalty.v1.LoyaltyService`, port 9090, the customer's token forwarded): `PriceCoupon` (no side effects) and `RedeemCoupon` (reserves the coupon for one checkout, idempotent per reservation id). Errors carry `COUPON_NOT_FOUND`, `COUPON_USED`, `COUPON_EXPIRED`, `COUPON_IN_USE`, `COUPON_OTHER_RESTAURANT`, `COUPON_MINIMUM_NOT_REACHED`. Contract: [`grpc-api/src/main/proto`](grpc-api/src/main/proto), checked by `buf lint` and `buf breaking`.
+
+Events: consumes `ordering.order.v1` (`placed`, `delivered`) and `identity.user.v1` (`user.deleted`), publishes `loyalty.reward.v1`: see [docs/events.md](docs/events.md).
+
+PostHog server events (`xp_earned` with the level and streak as person properties, `level_reached`, `badge_earned`, `stamp_card_completed`, `wheel_spun`) are sent only for customers who agreed to analytics; the consent travels with the order's events.
 
 ## Run
 
-One image, three modes: `serve` (default), `migrate`, `cron <task>`.
-
-```bash
-./gradlew build                     # compile, ktlint, tests (Docker needed for Testcontainers)
-
-export DATABASE__URL=jdbc:postgresql://localhost:15432/example DATABASE__USER=example DATABASE__PASSWORD=...
-./gradlew :app:run --args=migrate   # apply migrations
-./gradlew :app:run                  # serve on :8080, readable logs
-
-# In the k3d cluster, from the hub repo: Flux steps aside, Tilt rebuilds and redeploys on every change
-just dev <context>-service           # stop with: just dev-stop <context>-service
-
-./gradlew :app:jibDockerBuild -Djib.from.platforms=linux/arm64   # local image
+```sh
+./gradlew build                       # needs Docker (Testcontainers: Postgres, Kafka)
+./gradlew :app:run --args=migrate     # DATABASE__URL, DATABASE__USER, DATABASE__PASSWORD
+./gradlew :app:run                    # serve (HTTP 8080, gRPC 9090)
 ```
-
-Configuration comes from env vars only: `__` nests, `_` separates words (`HTTP__PORT`, `DATABASE__MAXIMUM_POOL_SIZE`, `LIFECYCLE__DRAIN_DELAY`). Missing values stop the service at startup with a full report.
-
-## What the example shows
-
-- Domain rules as plain exceptions (`InvalidItemName`, `ItemNameTaken`), mapped to `AppError` in the use cases.
-- A unique constraint mapped to a domain exception by SQLSTATE and constraint name, surfacing as `409 ITEM_NAME_TAKEN`.
-- RFC 9457 problem responses with stable codes and the request id.
-- Lifecycle components, health checks and routes collected with `@IntoSet` in `ServiceComponent`.
-- A smoke test that wires the real composition root against real Postgres.
 
 ## License
 
