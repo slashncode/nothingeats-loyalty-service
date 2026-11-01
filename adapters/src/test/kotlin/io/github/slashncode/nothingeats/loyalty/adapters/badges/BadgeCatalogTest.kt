@@ -2,7 +2,8 @@ package io.github.slashncode.nothingeats.loyalty.adapters.badges
 
 import io.github.slashncode.nothingeats.loyalty.adapters.odds.PostHogSpinOdds
 import io.github.slashncode.nothingeats.loyalty.domain.BadgeRule
-import io.github.slashncode.nothingeats.loyalty.domain.Prize
+import io.github.slashncode.nothingeats.loyalty.domain.PrizeReward
+import io.github.slashncode.nothingeats.loyalty.domain.Wheel
 import io.github.slashncode.nothingeats.platform.testing.RecordingAnalytics
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
@@ -24,19 +25,22 @@ class BadgeCatalogTest :
             }
         }
 
-        test("the wheel's odds come from the flag payload, with the defaults for anything unusable") {
+        test("the flag only names the odds profile: its variant, nothing without consent or flag") {
             val analytics = RecordingAnalytics()
             val odds = PostHogSpinOdds(analytics)
 
-            odds.weights(null) shouldBe Prize.DEFAULT_WEIGHTS
-            odds.weights("u-1") shouldBe Prize.DEFAULT_WEIGHTS
+            odds.profile("u-1") shouldBe null
+            analytics.flags[PostHogSpinOdds.FLAG] = "generous"
+            odds.profile(null) shouldBe null
+            odds.profile("u-1") shouldBe "generous"
+            analytics.flags[PostHogSpinOdds.FLAG] = true
+            odds.profile("u-1") shouldBe null
+        }
 
-            analytics.payloads[PostHogSpinOdds.FLAG] = """{"weights":{"FREE_DISH":5,"GOLDEN_FORK":1}}"""
-            odds.weights("u-1") shouldBe mapOf(Prize.FREE_DISH to 5, Prize.GOLDEN_FORK to 1)
-
-            analytics.payloads[PostHogSpinOdds.FLAG] = """{"weights":{"FREE_PIZZA":5}}"""
-            odds.weights("u-1") shouldBe Prize.DEFAULT_WEIGHTS
-            analytics.payloads[PostHogSpinOdds.FLAG] = """{"weights":{"FREE_DISH":0}}"""
-            odds.weights("u-1") shouldBe Prize.DEFAULT_WEIGHTS
+        test("the bundled badges know every badge the default wheel hands out") {
+            val badges = BadgeCatalog.load()
+            Wheel.DEFAULT.prizes
+                .mapNotNull { (it.reward as? PrizeReward.Badge)?.badgeKey }
+                .forEach { key -> badges.single { it.key == key }.rule shouldBe BadgeRule.WheelPrize }
         }
     })

@@ -3,18 +3,23 @@ package io.github.slashncode.nothingeats.loyalty.app
 import io.github.slashncode.nothingeats.loyalty.adapters.badges.BadgeCatalog
 import io.github.slashncode.nothingeats.loyalty.adapters.grpc.LoyaltyGrpcService
 import io.github.slashncode.nothingeats.loyalty.adapters.http.LoyaltyRoutes
+import io.github.slashncode.nothingeats.loyalty.adapters.messaging.BackofficeBadgesHandler
+import io.github.slashncode.nothingeats.loyalty.adapters.messaging.BackofficeWheelHandler
 import io.github.slashncode.nothingeats.loyalty.adapters.messaging.IdentityEventsHandler
 import io.github.slashncode.nothingeats.loyalty.adapters.messaging.LoyaltyTopics
 import io.github.slashncode.nothingeats.loyalty.adapters.messaging.OrderEventsHandler
 import io.github.slashncode.nothingeats.loyalty.adapters.messaging.OutboxRewardEvents
 import io.github.slashncode.nothingeats.loyalty.adapters.odds.PostHogSpinOdds
+import io.github.slashncode.nothingeats.loyalty.adapters.persistence.ExposedBadgeDefinitions
 import io.github.slashncode.nothingeats.loyalty.adapters.persistence.ExposedCoupons
 import io.github.slashncode.nothingeats.loyalty.adapters.persistence.ExposedEarnedBadges
 import io.github.slashncode.nothingeats.loyalty.adapters.persistence.ExposedMembers
 import io.github.slashncode.nothingeats.loyalty.adapters.persistence.ExposedOrders
 import io.github.slashncode.nothingeats.loyalty.adapters.persistence.ExposedStampCards
 import io.github.slashncode.nothingeats.loyalty.adapters.persistence.ExposedTransactions
+import io.github.slashncode.nothingeats.loyalty.adapters.persistence.ExposedWheels
 import io.github.slashncode.nothingeats.loyalty.application.AwardDelivery
+import io.github.slashncode.nothingeats.loyalty.application.BadgeDefinitions
 import io.github.slashncode.nothingeats.loyalty.application.Coupons
 import io.github.slashncode.nothingeats.loyalty.application.EarnedBadges
 import io.github.slashncode.nothingeats.loyalty.application.ExportRewards
@@ -23,15 +28,18 @@ import io.github.slashncode.nothingeats.loyalty.application.ListCoupons
 import io.github.slashncode.nothingeats.loyalty.application.Members
 import io.github.slashncode.nothingeats.loyalty.application.Orders
 import io.github.slashncode.nothingeats.loyalty.application.PriceCoupon
+import io.github.slashncode.nothingeats.loyalty.application.PublishBadge
+import io.github.slashncode.nothingeats.loyalty.application.PublishWheel
 import io.github.slashncode.nothingeats.loyalty.application.RecordPlacedOrder
 import io.github.slashncode.nothingeats.loyalty.application.RedeemCoupon
 import io.github.slashncode.nothingeats.loyalty.application.RewardEvents
+import io.github.slashncode.nothingeats.loyalty.application.ShowWheel
 import io.github.slashncode.nothingeats.loyalty.application.SpinOdds
 import io.github.slashncode.nothingeats.loyalty.application.SpinWheel
 import io.github.slashncode.nothingeats.loyalty.application.StampCards
 import io.github.slashncode.nothingeats.loyalty.application.Transactions
 import io.github.slashncode.nothingeats.loyalty.application.ViewRewards
-import io.github.slashncode.nothingeats.loyalty.domain.BadgeDefinition
+import io.github.slashncode.nothingeats.loyalty.application.Wheels
 import io.github.slashncode.nothingeats.platform.core.analytics.ProductAnalytics
 import io.github.slashncode.nothingeats.platform.core.lifecycle.HealthCheck
 import io.github.slashncode.nothingeats.platform.core.lifecycle.HealthChecks
@@ -215,9 +223,13 @@ abstract class ServiceComponent(
 
     // Loyalty
 
+    /** The backoffice's badges; the bundled `badges.json` until it has published any. */
     @ServiceScope
     @Provides
-    fun badgeDefinitions(): List<BadgeDefinition> = BadgeCatalog.load()
+    fun badgeDefinitions(postgres: PostgresDatabase): BadgeDefinitions = ExposedBadgeDefinitions(postgres, BadgeCatalog.load())
+
+    @Provides
+    fun wheels(postgres: PostgresDatabase): Wheels = ExposedWheels(postgres)
 
     @Provides
     fun members(postgres: PostgresDatabase): Members = ExposedMembers(postgres)
@@ -253,14 +265,16 @@ abstract class ServiceComponent(
         events: RewardEvents,
         transactions: Transactions,
         odds: SpinOdds,
-        definitions: List<BadgeDefinition>,
+        definitions: BadgeDefinitions,
+        wheels: Wheels,
         analytics: ProductAnalytics,
         clock: Clock,
     ): HttpRoutes =
         LoyaltyRoutes(
             viewRewards = ViewRewards(members, cards, badges, coupons, definitions, clock),
             listCoupons = ListCoupons(coupons, clock),
-            spinWheel = SpinWheel(members, coupons, badges, events, transactions, odds, definitions, analytics, clock = clock),
+            spinWheel = SpinWheel(members, coupons, badges, events, transactions, odds, definitions, wheels, analytics, clock = clock),
+            showWheel = ShowWheel(wheels),
             exportRewards = ExportRewards(members, cards, badges, coupons),
         )
 
@@ -282,7 +296,7 @@ abstract class ServiceComponent(
         coupons: Coupons,
         events: RewardEvents,
         transactions: Transactions,
-        definitions: List<BadgeDefinition>,
+        definitions: BadgeDefinitions,
         analytics: ProductAnalytics,
         clock: Clock,
     ): EventHandler =
@@ -301,4 +315,14 @@ abstract class ServiceComponent(
         orders: Orders,
         transactions: Transactions,
     ): EventHandler = IdentityEventsHandler(ForgetMember(members, cards, badges, coupons, orders, transactions))
+
+    // The backoffice's content (record 040)
+
+    @IntoSet
+    @Provides
+    fun backofficeBadges(definitions: BadgeDefinitions): EventHandler = BackofficeBadgesHandler(PublishBadge(definitions))
+
+    @IntoSet
+    @Provides
+    fun backofficeWheel(wheels: Wheels): EventHandler = BackofficeWheelHandler(PublishWheel(wheels))
 }

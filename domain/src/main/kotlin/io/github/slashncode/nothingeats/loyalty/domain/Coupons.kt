@@ -134,48 +134,129 @@ data class Coupon(
     }
 }
 
-/** The wheel's segments; what each one gives is fixed here, how often each comes up is not. */
-enum class Prize(
-    val coupon: CouponTerms?,
+/** What a segment of the wheel gives. */
+sealed interface PrizeReward {
+    data class Coupon(
+        val terms: CouponTerms,
+    ) : PrizeReward {
+        init {
+            require(terms.source == CouponSource.WHEEL) { "a wheel coupon comes from the wheel" }
+        }
+    }
+
+    data class BonusXp(
+        val xp: Int,
+    ) : PrizeReward {
+        init {
+            require(xp > 0) { "bonus XP must be positive" }
+        }
+    }
+
+    /** A badge; who has it already gets bonus XP instead. */
+    data class Badge(
+        val badgeKey: String,
+    ) : PrizeReward
+}
+
+/** A segment of the wheel: its key (stable, e.g. `PERCENT_10`), what it gives, its label. */
+data class Prize(
+    val key: String,
+    val reward: PrizeReward,
+    val label: Text,
 ) {
-    PERCENT_10(CouponTerms(CouponKind.PERCENT, 10, null, 1500, null, CouponSource.WHEEL)),
-    PERCENT_20(CouponTerms(CouponKind.PERCENT, 20, 1000, 2500, null, CouponSource.WHEEL)),
-    AMOUNT_5(CouponTerms(CouponKind.AMOUNT, 500, null, 2000, null, CouponSource.WHEEL)),
-    FREE_DELIVERY(CouponTerms(CouponKind.FREE_DELIVERY, 0, null, 0, null, CouponSource.WHEEL)),
-    FREE_DISH(CouponTerms(CouponKind.FREE_DISH, 0, 1200, 0, null, CouponSource.WHEEL)),
-    BONUS_XP(null),
-    GOLDEN_FORK(null),
-    ;
+    init {
+        require(KEY.matches(key)) { "prize key '$key' must be UPPER_SNAKE_CASE" }
+    }
+
+    val coupon: CouponTerms? get() = (reward as? PrizeReward.Coupon)?.terms
+
+    private companion object {
+        val KEY = Regex("^[A-Z0-9]+(_[A-Z0-9]+)*$")
+    }
+}
+
+/**
+ * The wheel of fortune as the backoffice publishes it (`backoffice.wheel.v1`): prizes in the order of
+ * the segments and named odds profiles (weights by prize key). [DEFAULT_PROFILE] applies to
+ * everyone; an experiment's variant picks another profile by its name.
+ */
+data class Wheel(
+    val prizes: List<Prize>,
+    val profiles: Map<String, Map<String, Int>>,
+) {
+    init {
+        require(prizes.isNotEmpty()) { "a wheel needs prizes" }
+        require(prizes.map { it.key }.toSet().size == prizes.size) { "prize keys must be unique" }
+        require(DEFAULT_PROFILE in profiles) { "a wheel needs the '$DEFAULT_PROFILE' profile" }
+        profiles.forEach { (name, weights) ->
+            require(weights.values.all { it >= 0 } && weights.values.sum() > 0) { "profile '$name' needs a weight above 0" }
+            require(weights.keys.all { key -> prizes.any { it.key == key } }) { "profile '$name' weighs a prize the wheel does not have" }
+        }
+    }
+
+    fun prize(key: String): Prize = prizes.first { it.key == key }
+
+    /** The odds of [profile], or the default ones when the wheel has no such profile; prizes without weight never come up. */
+    fun weights(profile: String?): List<Pair<Prize, Int>> {
+        val weights = profiles[profile] ?: profiles.getValue(DEFAULT_PROFILE)
+        return prizes.map { it to (weights[it.key] ?: 0) }.filter { it.second > 0 }
+    }
+
+    /** The wheel's bonus-XP prize, if it has one: a badge prize someone already has turns into it (or into [FALLBACK_XP]). */
+    val bonusXp: Prize? get() = prizes.firstOrNull { it.reward is PrizeReward.BonusXp }
 
     companion object {
-        const val BONUS_XP_AMOUNT = 100
-        const val GOLDEN_FORK_BADGE = "golden-fork"
+        const val DEFAULT_PROFILE = "default"
+        const val FALLBACK_XP = 100
 
-        /** The odds when no experiment says otherwise: coupons mostly, the rare badge rarely. */
-        val DEFAULT_WEIGHTS: Map<Prize, Int> =
-            mapOf(
-                PERCENT_10 to 25,
-                PERCENT_20 to 10,
-                AMOUNT_5 to 20,
-                FREE_DELIVERY to 20,
-                FREE_DISH to 10,
-                BONUS_XP to 12,
-                GOLDEN_FORK to 3,
-            )
-
-        /** A prize by weight; [roll] is uniform in `0 until` the sum of the weights. */
+        /** A prize by weight, in segment order; [roll] is uniform in `0 until` the sum of the weights. */
         fun pick(
-            weights: Map<Prize, Int>,
+            weights: List<Pair<Prize, Int>>,
             roll: Int,
         ): Prize {
             var rest = roll
-            for ((prize, weight) in weights.entries.sortedBy { it.key.ordinal }) {
+            for ((prize, weight) in weights) {
                 if (weight <= 0) continue
                 if (rest < weight) return prize
                 rest -= weight
             }
-            throw IllegalArgumentException("roll $roll is outside the weights ${weights.values.sum()}")
+            throw IllegalArgumentException("roll $roll is outside the weights ${weights.sumOf { it.second }}")
         }
+
+        private fun wheelCoupon(
+            kind: CouponKind,
+            value: Long,
+            maxDiscountCents: Long?,
+            minimumOrderCents: Long,
+        ) = PrizeReward.Coupon(CouponTerms(kind, value, maxDiscountCents, minimumOrderCents, null, CouponSource.WHEEL))
+
+        /** Until the backoffice has published a wheel: the prizes and odds from before phase 6. */
+        val DEFAULT =
+            Wheel(
+                prizes =
+                    listOf(
+                        Prize("PERCENT_10", wheelCoupon(CouponKind.PERCENT, 10, null, 1500), Text("10 %", "10%")),
+                        Prize("FREE_DELIVERY", wheelCoupon(CouponKind.FREE_DELIVERY, 0, null, 0), Text("Lieferung", "Delivery")),
+                        Prize("AMOUNT_5", wheelCoupon(CouponKind.AMOUNT, 500, null, 2000), Text("5 €", "€5")),
+                        Prize("BONUS_XP", PrizeReward.BonusXp(100), Text("+100 XP", "+100 XP")),
+                        Prize("PERCENT_20", wheelCoupon(CouponKind.PERCENT, 20, 1000, 2500), Text("20 %", "20%")),
+                        Prize("FREE_DISH", wheelCoupon(CouponKind.FREE_DISH, 0, 1200, 0), Text("Gericht", "Dish")),
+                        Prize("GOLDEN_FORK", PrizeReward.Badge("golden-fork"), Text("Gabel", "Fork")),
+                    ),
+                profiles =
+                    mapOf(
+                        DEFAULT_PROFILE to
+                            mapOf(
+                                "PERCENT_10" to 25,
+                                "PERCENT_20" to 10,
+                                "AMOUNT_5" to 20,
+                                "FREE_DELIVERY" to 20,
+                                "FREE_DISH" to 10,
+                                "BONUS_XP" to 12,
+                                "GOLDEN_FORK" to 3,
+                            ),
+                    ),
+            )
     }
 }
 

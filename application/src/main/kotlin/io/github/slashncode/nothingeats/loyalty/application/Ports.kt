@@ -1,11 +1,12 @@
 package io.github.slashncode.nothingeats.loyalty.application
 
 import io.github.slashncode.nothingeats.loyalty.domain.Award
+import io.github.slashncode.nothingeats.loyalty.domain.BadgeDefinition
 import io.github.slashncode.nothingeats.loyalty.domain.Coupon
 import io.github.slashncode.nothingeats.loyalty.domain.Member
 import io.github.slashncode.nothingeats.loyalty.domain.OrderFacts
-import io.github.slashncode.nothingeats.loyalty.domain.Prize
 import io.github.slashncode.nothingeats.loyalty.domain.StampCard
+import io.github.slashncode.nothingeats.loyalty.domain.Wheel
 import java.time.Instant
 
 interface Members {
@@ -105,9 +106,26 @@ interface RewardEvents {
     suspend fun earned(reward: RewardEarned)
 }
 
-/** How often each prize comes up for this person: an experiment's payload, or the default. */
+/**
+ * Which odds profile of the wheel this person gets: an experiment's variant (the PostHog flag), or
+ * null for the default. Asking counts as the experiment's exposure.
+ */
 interface SpinOdds {
-    suspend fun weights(distinctId: String?): Map<Prize, Int>
+    suspend fun profile(distinctId: String?): String?
+}
+
+/** The badges as the backoffice published them; the bundled ones until it has. */
+interface BadgeDefinitions {
+    suspend fun all(): List<BadgeDefinition>
+
+    suspend fun save(definition: BadgeDefinition)
+}
+
+/** The wheel as the backoffice published it last; null until it has. */
+interface Wheels {
+    suspend fun current(): Wheel?
+
+    suspend fun save(wheel: Wheel)
 }
 
 interface Transactions {

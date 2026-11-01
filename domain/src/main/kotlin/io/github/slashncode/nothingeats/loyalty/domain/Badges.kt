@@ -4,13 +4,20 @@ import java.time.Instant
 
 enum class BadgeTier { BRONZE, SILVER, GOLD }
 
-/** A badge and the rule that earns it. The definitions are data (`badges.json`), not code. */
+/**
+ * A badge and the rule that earns it. The definitions are data: edited in the backoffice
+ * (`backoffice.badge.v1`), with the bundled `badges.json` until it has published any.
+ */
 data class BadgeDefinition(
     val key: String,
     val tier: BadgeTier,
     val name: Text,
     val description: Text,
     val rule: BadgeRule,
+    /** Order on the rewards page. */
+    val position: Int = 0,
+    /** Retired badges can no longer be earned; whoever has one keeps it. */
+    val active: Boolean = true,
 ) {
     init {
         require(KEY.matches(key)) { "badge key '$key' must be lowercase words joined by dashes" }
@@ -137,8 +144,8 @@ sealed interface BadgeRule {
     }
 }
 
-/** The badges [facts] earn that the member does not have yet. */
+/** The badges [facts] earn that the member does not have yet; retired ones are out of reach. */
 fun List<BadgeDefinition>.newlyEarned(
     earned: Set<String>,
     facts: BadgeFacts,
-): List<BadgeDefinition> = filter { it.key !in earned && it.rule.isMetBy(facts) }
+): List<BadgeDefinition> = filter { it.active && it.key !in earned && it.rule.isMetBy(facts) }

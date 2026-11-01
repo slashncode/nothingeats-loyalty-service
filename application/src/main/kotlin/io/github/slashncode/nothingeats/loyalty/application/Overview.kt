@@ -33,7 +33,7 @@ class ViewRewards(
     private val cards: StampCards,
     private val badges: EarnedBadges,
     private val coupons: Coupons,
-    private val definitions: List<BadgeDefinition>,
+    private val definitions: BadgeDefinitions,
     private val clock: Clock = Clock.systemUTC(),
 ) {
     suspend operator fun invoke(userId: String): RewardsOverview {
@@ -47,9 +47,13 @@ class ViewRewards(
             nextLevelXp = Levels.startOf(member.level + 1),
             streakDays = member.streak.currentOn(today),
             orderedToday = member.streak.lastDay == today,
-            // Earned first (newest first), then the ones still to earn in definition order.
+            // Earned first (newest first), then the ones still to earn in the backoffice's order.
+            // Retired badges only for whoever has one.
             badges =
                 definitions
+                    .all()
+                    .filter { it.active || it.key in earned }
+                    .sortedBy { it.position }
                     .map { BadgeProgress(it, earned[it.key]) }
                     .sortedWith(compareBy<BadgeProgress> { it.earnedAt == null }.thenByDescending { it.earnedAt }),
             stampCards = cards.ofUser(userId).sortedWith(compareByDescending<StampCard> { it.stamps }.thenBy { it.restaurant.name }),

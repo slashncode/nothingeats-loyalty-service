@@ -3,6 +3,7 @@ package io.github.slashncode.nothingeats.loyalty.adapters.http
 import io.github.slashncode.nothingeats.loyalty.application.ExportRewards
 import io.github.slashncode.nothingeats.loyalty.application.ListCoupons
 import io.github.slashncode.nothingeats.loyalty.application.RewardsOverview
+import io.github.slashncode.nothingeats.loyalty.application.ShowWheel
 import io.github.slashncode.nothingeats.loyalty.application.SpinResult
 import io.github.slashncode.nothingeats.loyalty.application.SpinWheel
 import io.github.slashncode.nothingeats.loyalty.application.ViewRewards
@@ -101,8 +102,22 @@ data class CouponsResponse(
 )
 
 @Serializable
+data class WheelPrizeResponse(
+    val key: String,
+    val label: String,
+)
+
+/** The wheel's segments, clockwise from the top. */
+@Serializable
+data class WheelResponse(
+    val prizes: List<WheelPrizeResponse>,
+)
+
+@Serializable
 data class SpinResponse(
+    /** The key of the segment the wheel stops at. */
     val prize: String,
+    val prizeLabel: String,
     val coupon: CouponResponse?,
     val xpGained: Int,
     val level: LevelResponse?,
@@ -150,6 +165,7 @@ class LoyaltyRoutes(
     private val viewRewards: ViewRewards,
     private val listCoupons: ListCoupons,
     private val spinWheel: SpinWheel,
+    private val showWheel: ShowWheel,
     private val exportRewards: ExportRewards,
 ) : HttpRoutes {
     override fun Route.register() {
@@ -158,6 +174,10 @@ class LoyaltyRoutes(
                 get("/me") { call.respond(viewRewards(call.user.id).response(call.language())) }
                 get("/coupons") { call.respond(CouponsResponse(listCoupons(call.user.id).map { it.response() })) }
                 post("/spins") { call.respond(spinWheel(call.user.id).response(call.language())) }
+                get("/wheel") {
+                    val language = call.language()
+                    call.respond(WheelResponse(showWheel().prizes.map { WheelPrizeResponse(it.key, it.label.of(language)) }))
+                }
                 get("/me/export") {
                     val export = exportRewards(call.user.id)
                     call.response.header(HttpHeaders.ContentDisposition, "attachment; filename=\"nothingeats-rewards.json\"")
@@ -215,7 +235,8 @@ class LoyaltyRoutes(
 
     private fun SpinResult.response(language: Language) =
         SpinResponse(
-            prize = prize.name,
+            prize = prize.key,
+            prizeLabel = prize.label.of(language),
             coupon = coupon?.response(),
             xpGained = award?.xpGained ?: 0,
             level =

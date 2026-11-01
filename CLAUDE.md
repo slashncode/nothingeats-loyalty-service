@@ -12,8 +12,8 @@ Loyalty service of NothingEats (XP, levels, streaks, badges, stamp cards, the wh
 ## Rules
 
 - Respect the module direction: `grpc-api`, `domain` ← `application` ← `adapters` ← `app`. Never add a framework dependency to `domain`.
-- Reward rules live in the domain (`Rewards`, `Levels`, `Streak`, `StampCard`, `Prize`); badge definitions are data in `adapters/src/main/resources/badges.json`. A new badge rule type needs a `BadgeRule` and its JSON form in `BadgeCatalog`.
-- The wheel is decided on the server only; odds from the PostHog flag `spin-wheel-odds`, never from the client.
+- Reward rules live in the domain (`Rewards`, `Levels`, `Streak`, `StampCard`, `Wheel`). Badges and the wheel are data from the backoffice (`backoffice.badge.v1`, `backoffice.wheel.v1`, journal record 040); `badges.json` and `Wheel.DEFAULT` only apply until it has published. A new badge rule type needs a `BadgeRule`, its JSON form in `BadgeCatalog` and the option in the backoffice.
+- The wheel is decided on the server only; the PostHog flag `spin-wheel-odds` only names the odds profile (its variant), never the client.
 - Server-side analytics only with consent: events from consumers carry `analytics`; HTTP requests have it when the browser sent its distinct id (`AnalyticsContext.consented()`).
 - Wiring happens only in `app/.../ServiceComponent.kt`. Lifecycle components, health checks, routes, gRPC services, event handlers and cron tasks are contributed with `@IntoSet`.
 - Expected failures are `AppError` subtypes with an `UPPER_SNAKE` code, thrown from use cases.

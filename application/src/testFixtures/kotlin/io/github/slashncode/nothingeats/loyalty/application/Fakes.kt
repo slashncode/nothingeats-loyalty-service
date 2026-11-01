@@ -6,10 +6,10 @@ import io.github.slashncode.nothingeats.loyalty.domain.BadgeTier
 import io.github.slashncode.nothingeats.loyalty.domain.Coupon
 import io.github.slashncode.nothingeats.loyalty.domain.Member
 import io.github.slashncode.nothingeats.loyalty.domain.OrderFacts
-import io.github.slashncode.nothingeats.loyalty.domain.Prize
 import io.github.slashncode.nothingeats.loyalty.domain.RestaurantRef
 import io.github.slashncode.nothingeats.loyalty.domain.StampCard
 import io.github.slashncode.nothingeats.loyalty.domain.Text
+import io.github.slashncode.nothingeats.loyalty.domain.Wheel
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -119,14 +119,37 @@ class RecordingRewardEvents : RewardEvents {
     }
 }
 
+/** The experiment's variant this person gets; null: the default profile. */
 class FixedSpinOdds(
-    var weights: Map<Prize, Int> = Prize.DEFAULT_WEIGHTS,
+    var profile: String? = null,
 ) : SpinOdds {
     val askedFor = CopyOnWriteArrayList<String?>()
 
-    override suspend fun weights(distinctId: String?): Map<Prize, Int> {
+    override suspend fun profile(distinctId: String?): String? {
         askedFor += distinctId
-        return weights
+        return profile.takeIf { distinctId != null }
+    }
+}
+
+class InMemoryBadgeDefinitions(
+    initial: List<BadgeDefinition> = testBadges,
+) : BadgeDefinitions {
+    private val all = ConcurrentHashMap(initial.associateBy { it.key })
+
+    override suspend fun all() = all.values.sortedBy { it.position }
+
+    override suspend fun save(definition: BadgeDefinition) {
+        all[definition.key] = definition
+    }
+}
+
+class InMemoryWheels(
+    var wheel: Wheel? = null,
+) : Wheels {
+    override suspend fun current() = wheel
+
+    override suspend fun save(wheel: Wheel) {
+        this.wheel = wheel
     }
 }
 
@@ -139,13 +162,14 @@ val phantomPizza = RestaurantRef("r-pizza", "phantom-pizza", "Phantom Pizza")
 fun badge(
     key: String,
     rule: BadgeRule,
-) = BadgeDefinition(key, BadgeTier.BRONZE, Text(key, key), Text(key, key), rule)
+    position: Int = 0,
+) = BadgeDefinition(key, BadgeTier.BRONZE, Text(key, key), Text(key, key), rule, position)
 
 val testBadges =
     listOf(
-        badge("first-nothing", BadgeRule.Orders(1)),
-        badge("level-2", BadgeRule.Level(2)),
-        badge("golden-fork", BadgeRule.WheelPrize),
+        badge("first-nothing", BadgeRule.Orders(1), 0),
+        badge("level-2", BadgeRule.Level(2), 1),
+        badge("golden-fork", BadgeRule.WheelPrize, 2),
     )
 
 fun orderFacts(

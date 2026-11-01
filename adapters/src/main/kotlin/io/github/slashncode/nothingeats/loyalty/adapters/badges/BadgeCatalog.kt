@@ -3,20 +3,22 @@ package io.github.slashncode.nothingeats.loyalty.adapters.badges
 import io.github.slashncode.nothingeats.loyalty.domain.BadgeDefinition
 import io.github.slashncode.nothingeats.loyalty.domain.BadgeRule
 import io.github.slashncode.nothingeats.loyalty.domain.BadgeTier
-import io.github.slashncode.nothingeats.loyalty.domain.Prize
+import io.github.slashncode.nothingeats.loyalty.domain.PrizeReward
 import io.github.slashncode.nothingeats.loyalty.domain.Text
+import io.github.slashncode.nothingeats.loyalty.domain.Wheel
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 @Serializable
-private data class TextJson(
+internal data class TextJson(
     val de: String,
     val en: String,
 )
 
+/** A badge rule as JSON (`{"type": "orders", "min": 1}`), the shape of badges.json and the backoffice's events. */
 @Serializable
-private sealed interface RuleJson {
+internal sealed interface RuleJson {
     @Serializable
     @SerialName("orders")
     data class Orders(
@@ -104,7 +106,7 @@ private data class BadgeJson(
     val rule: RuleJson,
 )
 
-private fun RuleJson.domain(): BadgeRule =
+internal fun RuleJson.domain(): BadgeRule =
     when (this) {
         is RuleJson.Orders -> BadgeRule.Orders(min)
         is RuleJson.Restaurants -> BadgeRule.Restaurants(min)
@@ -121,23 +123,52 @@ private fun RuleJson.domain(): BadgeRule =
         RuleJson.WheelPrize -> BadgeRule.WheelPrize
     }
 
+internal fun BadgeRule.json(): RuleJson =
+    when (this) {
+        is BadgeRule.Orders -> RuleJson.Orders(min)
+        is BadgeRule.Restaurants -> RuleJson.Restaurants(min)
+        is BadgeRule.StreakDays -> RuleJson.Streak(min)
+        is BadgeRule.MoneyNotSpent -> RuleJson.MoneyNotSpent(minCents)
+        is BadgeRule.CaloriesAvoided -> RuleJson.CaloriesAvoided(min)
+        is BadgeRule.Level -> RuleJson.Level(min)
+        is BadgeRule.StampCards -> RuleJson.StampCards(min)
+        is BadgeRule.DealOrders -> RuleJson.DealOrders(min)
+        is BadgeRule.CouponOrders -> RuleJson.CouponOrders(min)
+        is BadgeRule.OrderTotal -> RuleJson.OrderTotal(minCents)
+        is BadgeRule.OrderItems -> RuleJson.OrderItems(min)
+        is BadgeRule.PlacedBetween -> RuleJson.PlacedBetween(fromHour, toHour)
+        BadgeRule.WheelPrize -> RuleJson.WheelPrize
+    }
+
+/** Rules as JSON with `type` as discriminator. */
+internal val RuleJsonFormat = Json { classDiscriminator = "type" }
+
 /**
- * The badges, read from `badges.json` on the classpath: adding a badge is a data change, and a
- * broken file stops the service at startup instead of failing quietly at the first award.
+ * The bundled badges from `badges.json`: what loyalty uses until the backoffice has published its
+ * own (`backoffice.badge.v1`). A broken file stops the service at startup instead of failing
+ * quietly at the first award.
  */
 object BadgeCatalog {
-    private val json = Json { classDiscriminator = "type" }
+    private val json = RuleJsonFormat
 
     fun load(resource: String = "/badges.json"): List<BadgeDefinition> {
         val text = BadgeCatalog::class.java.getResource(resource)?.readText() ?: error("$resource is missing")
         val badges =
-            json.decodeFromString<List<BadgeJson>>(text).map {
-                BadgeDefinition(it.key, it.tier, Text(it.name.de, it.name.en), Text(it.description.de, it.description.en), it.rule.domain())
+            json.decodeFromString<List<BadgeJson>>(text).mapIndexed { position, it ->
+                BadgeDefinition(
+                    it.key,
+                    it.tier,
+                    Text(it.name.de, it.name.en),
+                    Text(it.description.de, it.description.en),
+                    it.rule.domain(),
+                    position,
+                )
             }
         val duplicates = badges.groupBy { it.key }.filterValues { it.size > 1 }.keys
         check(duplicates.isEmpty()) { "duplicate badge keys: $duplicates" }
-        check(badges.any { it.key == Prize.GOLDEN_FORK_BADGE && it.rule == BadgeRule.WheelPrize }) {
-            "the wheel's '${Prize.GOLDEN_FORK_BADGE}' badge must be defined with the wheelPrize rule"
+        val wheelBadges = Wheel.DEFAULT.prizes.mapNotNull { (it.reward as? PrizeReward.Badge)?.badgeKey }
+        check(wheelBadges.all { key -> badges.any { it.key == key && it.rule == BadgeRule.WheelPrize } }) {
+            "the default wheel's badges $wheelBadges must be defined with the wheelPrize rule"
         }
         return badges
     }

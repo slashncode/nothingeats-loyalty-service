@@ -31,7 +31,7 @@ private fun cart(
     prices: List<Long> = listOf(1_290, 710),
 ) = CouponCart(restaurantId, subtotal, fee, prices)
 
-private fun terms(prize: Prize) = checkNotNull(prize.coupon)
+private fun terms(prize: String) = checkNotNull(Wheel.DEFAULT.prize(prize).coupon)
 
 private fun coupon(terms: CouponTerms) = Coupon("c-1", "NE-ABCD-EFGH", "u-1", terms, noon, noon + Coupon.VALIDITY, CouponState.Active)
 
@@ -129,13 +129,13 @@ class LoyaltyDomainTest :
         }
 
         test("coupons take off what they promise, never more than the cart costs") {
-            coupon(terms(Prize.PERCENT_10)).price(cart(), noon) shouldBe 200
-            coupon(terms(Prize.PERCENT_20)).price(cart(subtotal = 9_000), noon) shouldBe 1_000
-            coupon(terms(Prize.AMOUNT_5)).price(cart(), noon) shouldBe 500
-            coupon(terms(Prize.FREE_DELIVERY)).price(cart(), noon) shouldBe 199
-            coupon(terms(Prize.FREE_DISH)).price(cart(), noon) shouldBe 1_200
+            coupon(terms("PERCENT_10")).price(cart(), noon) shouldBe 200
+            coupon(terms("PERCENT_20")).price(cart(subtotal = 9_000), noon) shouldBe 1_000
+            coupon(terms("AMOUNT_5")).price(cart(), noon) shouldBe 500
+            coupon(terms("FREE_DELIVERY")).price(cart(), noon) shouldBe 199
+            coupon(terms("FREE_DISH")).price(cart(), noon) shouldBe 1_200
             coupon(stampCardCoupon(pizza)).price(cart(), noon) shouldBe 1_290
-            coupon(terms(Prize.AMOUNT_5).copy(minimumOrderCents = 0)).price(cart(subtotal = 300, prices = listOf(300)), noon) shouldBe 300
+            coupon(terms("AMOUNT_5").copy(minimumOrderCents = 0)).price(cart(subtotal = 300, prices = listOf(300)), noon) shouldBe 300
         }
 
         test("coupons refuse other restaurants, small carts, expiry, reuse and someone else's checkout") {
@@ -143,10 +143,10 @@ class LoyaltyDomainTest :
                 shouldThrow<CouponRefused> { coupon.price(cart, at, "checkout-2") }.reason
             }
             reason(coupon(stampCardCoupon(pizza)), cart(restaurantId = "r-burger"), noon) shouldBe CouponRefusal.OTHER_RESTAURANT
-            reason(coupon(terms(Prize.PERCENT_10)), cart(subtotal = 1_000), noon) shouldBe CouponRefusal.MINIMUM_NOT_REACHED
-            reason(coupon(terms(Prize.PERCENT_10)), cart(), noon + Coupon.VALIDITY) shouldBe CouponRefusal.EXPIRED
+            reason(coupon(terms("PERCENT_10")), cart(subtotal = 1_000), noon) shouldBe CouponRefusal.MINIMUM_NOT_REACHED
+            reason(coupon(terms("PERCENT_10")), cart(), noon + Coupon.VALIDITY) shouldBe CouponRefusal.EXPIRED
 
-            val (reserved, discount) = coupon(terms(Prize.AMOUNT_5)).reserve(cart(), "checkout-1", noon, Duration.ofMinutes(15))
+            val (reserved, discount) = coupon(terms("AMOUNT_5")).reserve(cart(), "checkout-1", noon, Duration.ofMinutes(15))
             discount shouldBe 500
             reason(reserved, cart(), noon.plusSeconds(60)) shouldBe CouponRefusal.IN_USE
             reserved.price(cart(), noon.plusSeconds(60), "checkout-1") shouldBe 500
@@ -158,10 +158,12 @@ class LoyaltyDomainTest :
         }
 
         test("the wheel picks by weight") {
-            val weights = mapOf(Prize.PERCENT_10 to 2, Prize.GOLDEN_FORK to 1)
-            Prize.pick(weights, 0) shouldBe Prize.PERCENT_10
-            Prize.pick(weights, 1) shouldBe Prize.PERCENT_10
-            Prize.pick(weights, 2) shouldBe Prize.GOLDEN_FORK
-            shouldThrow<IllegalArgumentException> { Prize.pick(weights, 3) }
+            val ten = Wheel.DEFAULT.prize("PERCENT_10")
+            val fork = Wheel.DEFAULT.prize("GOLDEN_FORK")
+            val weights = listOf(ten to 2, fork to 1)
+            Wheel.pick(weights, 0) shouldBe ten
+            Wheel.pick(weights, 1) shouldBe ten
+            Wheel.pick(weights, 2) shouldBe fork
+            shouldThrow<IllegalArgumentException> { Wheel.pick(weights, 3) }
         }
     })

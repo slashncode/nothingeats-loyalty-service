@@ -2,7 +2,7 @@ package io.github.slashncode.nothingeats.loyalty.app
 
 import io.github.slashncode.nothingeats.loyalty.domain.Coupon
 import io.github.slashncode.nothingeats.loyalty.domain.CouponState
-import io.github.slashncode.nothingeats.loyalty.domain.Prize
+import io.github.slashncode.nothingeats.loyalty.domain.Wheel
 import io.github.slashncode.nothingeats.loyalty.grpc.v1.LoyaltyServiceGrpcKt
 import io.github.slashncode.nothingeats.loyalty.grpc.v1.couponCart
 import io.github.slashncode.nothingeats.loyalty.grpc.v1.priceCouponRequest
@@ -143,7 +143,14 @@ private fun rewardEvents(): List<CloudEvent> =
 class LoyaltyFlowTest :
     FunSpec({
         test("delivered orders earn XP, stamps, a spin; coupons are priced, reserved and redeemed; deletion erases all") {
-            KafkaTestCluster.createTopics("ordering.order.v1", "identity.user.v1", "loyalty.reward.v1", "loyalty-service.dlq")
+            KafkaTestCluster.createTopics(
+                "ordering.order.v1",
+                "identity.user.v1",
+                "loyalty.reward.v1",
+                "loyalty-service.dlq",
+                "backoffice.badge.v1",
+                "backoffice.wheel.v1",
+            )
             val tokens = TestTokens()
             val port = freePort()
             val grpcPort = freePort()
@@ -188,6 +195,21 @@ class LoyaltyFlowTest :
                     producer.publish("ordering.order.v1", delivered("o-2"))
                     // A repeated delivery must not count twice.
                     producer.publish("ordering.order.v1", delivered("o-2"))
+                    // The backoffice's wheel: two prizes, and the default profile only ever gives 5 €.
+                    producer.publish(
+                        "backoffice.wheel.v1",
+                        event(
+                            "nothingeats.backoffice.wheel.published.v1",
+                            "wheel",
+                            Json
+                                .parseToJsonElement(
+                                    """{"prizes":[
+                                     {"key":"AMOUNT_5","kind":"AMOUNT","label":{"de":"5 €","en":"€5"},"value":500,"maxDiscountCents":null,"minimumOrderCents":2000},
+                                     {"key":"BONUS_XP","kind":"BONUS_XP","label":{"de":"+50 XP","en":"+50 XP"},"xp":50}],
+                                   "profiles":[{"name":"default","weights":{"AMOUNT_5":1}}]}""",
+                                ).jsonObject,
+                        ),
+                    )
                 }
 
                 eventually(30.seconds) {
@@ -213,9 +235,13 @@ class LoyaltyFlowTest :
                         .text("spinsGranted") shouldBe "1"
                 }
 
+                eventually(20.seconds) {
+                    json(call("GET", "/wheel?lang=en")).getValue("prizes").jsonArray.map { it.jsonObject.text("label") } shouldBe
+                        listOf("€5", "+50 XP")
+                }
                 val spin = call("POST", "/spins")
                 spin.statusCode() shouldBe 200
-                Prize.entries.map { it.name } shouldContain json(spin).text("prize")
+                json(spin).text("prize") shouldBe "AMOUNT_5"
 
                 // A coupon of the customer's, priced and reserved over gRPC as ordering does it.
                 val now = Instant.now()
@@ -224,7 +250,7 @@ class LoyaltyFlowTest :
                         "8a3f6c2e-0000-4000-8000-000000000001",
                         "NE-TEST-2345",
                         USER,
-                        Prize.AMOUNT_5.coupon!!,
+                        Wheel.DEFAULT.prize("AMOUNT_5").coupon!!,
                         now,
                         now + Coupon.VALIDITY,
                         CouponState.Active,

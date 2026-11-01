@@ -1,10 +1,11 @@
 package io.github.slashncode.nothingeats.loyalty.application
 
+import io.github.slashncode.nothingeats.loyalty.domain.BadgeRule
 import io.github.slashncode.nothingeats.loyalty.domain.CouponCart
 import io.github.slashncode.nothingeats.loyalty.domain.CouponKind
 import io.github.slashncode.nothingeats.loyalty.domain.CouponState
-import io.github.slashncode.nothingeats.loyalty.domain.Prize
 import io.github.slashncode.nothingeats.loyalty.domain.StampCard
+import io.github.slashncode.nothingeats.loyalty.domain.Wheel
 import io.github.slashncode.nothingeats.platform.core.analytics.AnalyticsContext
 import io.github.slashncode.nothingeats.platform.core.error.AppError
 import io.github.slashncode.nothingeats.platform.testing.RecordingAnalytics
@@ -31,14 +32,28 @@ private class Loyalty {
     val events = RecordingRewardEvents()
     val analytics = RecordingAnalytics()
     val odds = FixedSpinOdds()
+    val definitions = InMemoryBadgeDefinitions()
+    val wheels = InMemoryWheels()
     var clock: Clock = Clock.fixed(Instant.parse("2026-11-02T11:05:00Z"), ZoneOffset.UTC)
     val transactions = DirectTransactions()
 
     val record get() = RecordPlacedOrder(orders, coupons, transactions, clock)
-    val award get() = AwardDelivery(orders, members, cards, badges, coupons, events, transactions, testBadges, analytics, clock = clock)
+    val award get() = AwardDelivery(orders, members, cards, badges, coupons, events, transactions, definitions, analytics, clock = clock)
 
     fun wheel(roll: Int = 0) =
-        SpinWheel(members, coupons, badges, events, transactions, odds, testBadges, analytics, clock = clock, random = FixedRandom(roll))
+        SpinWheel(
+            members,
+            coupons,
+            badges,
+            events,
+            transactions,
+            odds,
+            definitions,
+            wheels,
+            analytics,
+            clock = clock,
+            random = FixedRandom(roll),
+        )
 }
 
 /** A Random whose nextInt(until) always answers [roll]. */
@@ -110,20 +125,25 @@ class LoyaltyUseCasesTest :
 
             val spin = loyalty.wheel(roll = 0)("u-1")
 
-            spin.prize shouldBe Prize.PERCENT_10
-            spin.coupon!!.terms shouldBe Prize.PERCENT_10.coupon
+            spin.prize shouldBe Wheel.DEFAULT.prize("PERCENT_10")
+            spin.coupon!!.terms shouldBe Wheel.DEFAULT.prize("PERCENT_10").coupon
             spin.spinsLeft shouldBe 0
             loyalty.coupons.ofUser("u-1") shouldHaveSize 1
             shouldThrow<AppError.Conflict> { loyalty.wheel()("u-1") }.code.value shouldBe "NO_SPINS_LEFT"
         }
 
-        test("the odds come from the experiment only with consent; a second golden fork becomes bonus XP") {
+        test("the experiment's variant picks the odds only with consent; a second golden fork becomes bonus XP") {
             val loyalty = Loyalty()
             loyalty.members.save(loyalty.members.lock("u-1").copy(spinsAvailable = 3))
-            loyalty.odds.weights = mapOf(Prize.GOLDEN_FORK to 1)
+            // The backoffice's wheel: the default profile only gives forks, so does the "forks" variant.
+            loyalty.wheels.wheel =
+                Wheel.DEFAULT.copy(
+                    profiles = mapOf(Wheel.DEFAULT_PROFILE to mapOf("GOLDEN_FORK" to 1), "forks" to mapOf("GOLDEN_FORK" to 1)),
+                )
+            loyalty.odds.profile = "forks"
 
-            loyalty.wheel()("u-1").prize shouldBe Prize.GOLDEN_FORK
-            withContext(AnalyticsContext("u-1", "s-1")) { loyalty.wheel()("u-1") }.prize shouldBe Prize.BONUS_XP
+            loyalty.wheel()("u-1").prize.key shouldBe "GOLDEN_FORK"
+            withContext(AnalyticsContext("u-1", "s-1")) { loyalty.wheel()("u-1") }.prize.key shouldBe "BONUS_XP"
 
             loyalty.odds.askedFor shouldContainExactly listOf(null, "u-1")
             loyalty.badges.ofUser("u-1").map { it.key } shouldContainExactly listOf("golden-fork", "level-2")
@@ -132,11 +152,39 @@ class LoyaltyUseCasesTest :
             loyalty.analytics.events.map { it.name } shouldContainExactly listOf("wheel_spun", "xp_earned", "level_reached", "badge_earned")
         }
 
+        test("the backoffice's wheel and odds profiles rule the spin: the variant's profile, else the default") {
+            val loyalty = Loyalty()
+            loyalty.members.save(loyalty.members.lock("u-1").copy(spinsAvailable = 2))
+            val five = Wheel.DEFAULT.prize("AMOUNT_5")
+            val ten = Wheel.DEFAULT.prize("PERCENT_10")
+            loyalty.wheels.wheel =
+                Wheel(listOf(ten, five), mapOf(Wheel.DEFAULT_PROFILE to mapOf("PERCENT_10" to 1), "generous" to mapOf("AMOUNT_5" to 1)))
+
+            loyalty.wheel()("u-1").prize shouldBe ten
+            loyalty.odds.profile = "generous"
+            withContext(AnalyticsContext("u-1", "s-1")) { loyalty.wheel()("u-1") }.prize shouldBe five
+            ShowWheel(loyalty.wheels)().prizes.map { it.key } shouldContainExactly listOf("PERCENT_10", "AMOUNT_5")
+        }
+
+        test("retired badges cannot be earned any more; the rewards page shows them only to their owners") {
+            val loyalty = Loyalty()
+            loyalty.definitions.save(badge("first-nothing", BadgeRule.Orders(1)).copy(active = false))
+            loyalty.record(orderFacts())
+
+            loyalty
+                .award("o-1")!!
+                .award.badges
+                .map { it.key } shouldContainExactly emptyList()
+            ViewRewards(loyalty.members, loyalty.cards, loyalty.badges, loyalty.coupons, loyalty.definitions, loyalty.clock)("u-1")
+                .badges
+                .map { it.definition.key } shouldContainExactly listOf("level-2", "golden-fork")
+        }
+
         test("a coupon is priced, reserved for one checkout, redeemed by the placed order") {
             val loyalty = Loyalty()
             loyalty.members.save(loyalty.members.lock("u-1").copy(spinsAvailable = 1))
-            // Default weights: rolls 55–74 are free delivery.
-            val code = loyalty.wheel(roll = 60)("u-1").coupon!!.code
+            // Default wheel, prizes in segment order: rolls 25–44 are free delivery.
+            val code = loyalty.wheel(roll = 30)("u-1").coupon!!.code
             val price = PriceCoupon(loyalty.coupons, loyalty.clock)
             val redeem = RedeemCoupon(loyalty.coupons, loyalty.transactions, Duration.ofMinutes(15), loyalty.clock)
 
@@ -158,7 +206,8 @@ class LoyaltyUseCasesTest :
             loyalty.record(orderFacts())
             loyalty.award("o-1")
 
-            val overview = ViewRewards(loyalty.members, loyalty.cards, loyalty.badges, loyalty.coupons, testBadges, loyalty.clock)("u-1")
+            val overview =
+                ViewRewards(loyalty.members, loyalty.cards, loyalty.badges, loyalty.coupons, loyalty.definitions, loyalty.clock)("u-1")
 
             overview.member.level shouldBe 1
             overview.levelStartXp shouldBe 0

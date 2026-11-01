@@ -1,7 +1,6 @@
 package io.github.slashncode.nothingeats.loyalty.application
 
 import io.github.slashncode.nothingeats.loyalty.domain.Award
-import io.github.slashncode.nothingeats.loyalty.domain.BadgeDefinition
 import io.github.slashncode.nothingeats.loyalty.domain.Coupon
 import io.github.slashncode.nothingeats.loyalty.domain.CouponState
 import io.github.slashncode.nothingeats.loyalty.domain.CouponTerms
@@ -81,7 +80,7 @@ class AwardDelivery(
     private val coupons: Coupons,
     private val events: RewardEvents,
     private val transactions: Transactions,
-    private val definitions: List<BadgeDefinition>,
+    private val definitions: BadgeDefinitions,
     private val analytics: ProductAnalytics,
     private val codes: CouponCodes = CouponCodes(),
     private val clock: Clock = Clock.systemUTC(),
@@ -104,7 +103,7 @@ class AwardDelivery(
                 val card = cards.find(order.userId, order.restaurant.id) ?: StampCard.empty(order.userId, order.restaurant)
                 val earned = badges.ofUser(order.userId).map { it.key }.toSet()
                 val day = order.placedAt.atZone(SHOP_ZONE).toLocalDate()
-                val award = Rewards.forDelivery(member, card, order, day, definitions, earned)
+                val award = Rewards.forDelivery(member, card, order, day, definitions.all(), earned)
                 val issued = award.coupons.map { issue(it, order.userId, codes, now) }
 
                 members.save(award.member)
