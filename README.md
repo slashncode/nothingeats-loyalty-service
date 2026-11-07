@@ -14,7 +14,7 @@ Loyalty bounded context of [NothingEats](https://github.com/slashncode/nothingea
 | Badges | data, not code: edited in the backoffice (`backoffice.badge.v1`: texts, tier, rule numbers, retired or not); the bundled [`badges.json`](adapters/src/main/resources/badges.json) applies until it has published any. Rule types (`orders`, `streak`, `placedBetween`, `orderTotal`, …) are code |
 | Coupons | valid 30 days, priced and reserved by ordering over gRPC, redeemed by the `order placed` event |
 
-The wheel's odds are named profiles in the backoffice. The PostHog flag `spin-wheel-odds` only picks one: its variant (an experiment's arm, e.g. `generous`) is the profile's name, for customers with analytics consent; everyone else, and every unknown variant, gets `default`. `GET /wheel` lists the segments with their labels.
+The wheel's odds are named profiles in the backoffice. The PostHog flag `spin-wheel-odds` only picks one: its variant (an experiment's arm, e.g. `generous`) is the profile's name, for customers with analytics consent; everyone else, and every unknown variant, gets `default`. The flag is evaluated locally with the project's Feature Flags Secure API Key (`POSTHOG__FLAGS_SECRET_KEY`); the exposure (`$feature_flag_called`) still goes to PostHog for the experiment. `GET /wheel` lists the segments with their labels.
 
 ## API
 
